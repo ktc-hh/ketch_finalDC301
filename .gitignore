@@ -1,0 +1,5 @@
+node_modules/
+dist/
+server/kainan.sqlite
+server/kainan.sqlite-shm
+server/kainan.sqlite-wal

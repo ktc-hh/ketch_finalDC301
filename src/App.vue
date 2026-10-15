@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from 'vue'
-import { s, setView, login, logout } from './store'
+import { onMounted, ref } from 'vue'
+import { s, setView, login, logout, refreshMenu } from './store'
 import FloorView from './components/FloorView.vue'
 import OrderView from './components/OrderView.vue'
 import KitchenView from './components/KitchenView.vue'
@@ -16,6 +16,7 @@ const tabs = [
 ]
 
 const loginForm = ref({ username: '', password: '' })
+onMounted(refreshMenu)
 
 const handleLogin = () => {
   const username = loginForm.value.username.trim() || 'Staff'

@@ -5,7 +5,7 @@ import { s, money, left, addItem, changeQty, setType, sendOrder, capture } from 
 
 const search = ref('')
 const cat = ref('All')
-const cats = ['All', ...new Set(MENU.map((m) => m.cat))]
+const cats = computed(() => ['All', ...new Set(MENU.map((m) => m.cat))])
 const filtered = computed(() =>
   MENU.filter((m) => (cat.value === 'All' || m.cat === cat.value) && m.name.toLowerCase().includes(search.value.toLowerCase()))
 )
@@ -69,7 +69,7 @@ const filtered = computed(() =>
       <div v-if="s.calc.service" class="row"><span>Service charge 10%</span><span>{{ money(s.calc.service) }}</span></div>
       <div class="row"><span class="muted">VAT 12% (included)</span><span class="muted">{{ money(s.calc.vat) }}</span></div>
       <div class="total"><span>Total</span><span>{{ money(s.calc.total) }}</span></div>
-      <button class="primary" type="submit" :disabled="!s.cart.length" style="width: 100%">Send to kitchen</button>
+      <button class="primary" type="submit" :disabled="!s.cart.length || s.sending" style="width: 100%">{{ s.sending ? 'Sending order…' : 'Send to kitchen' }}</button>
     </form>
   </aside>
 </template>

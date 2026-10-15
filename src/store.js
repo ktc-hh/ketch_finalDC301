@@ -2,11 +2,7 @@ import { reactive, computed, watch } from 'vue'
 import { MENU, DISCOUNTS } from './data'
 
 const KEY = 'kainan-vue'
-const fresh = () => ({
-  orders: [],
-  seq: 100,
-  stock: Object.fromEntries(MENU.map((m) => [m.id, m.stock])),
-})
+const fresh = () => ({ orders: [], seq: 100, stock: {} })
 
 let saved = fresh()
 try {
@@ -16,7 +12,7 @@ try {
 
 export const s = reactive({
   ...saved,
-  view: 'floor', type: 'Dine-in', table: 1, cart: [], discount: 'None',
+  view: 'floor', type: 'Dine-in', table: 1, cart: [], discount: 'None', sending: false,
   now: Date.now(), toast: '', last: null, log: [],
   authenticated: false, userName: 'Guest',
 })
@@ -39,11 +35,11 @@ s.topItems = computed(() => {
   s.paid.forEach((o) => o.lines.forEach((l) => (t[l.name] = (t[l.name] || 0) + l.qty)))
   return Object.entries(t).sort((a, b) => b[1] - a[1]).slice(0, 4)
 })
-s.lowStock = computed(() => MENU.filter((m) => s.stock[m.id] <= 5))
+s.lowStock = computed(() => MENU.filter((m) => (s.stock[m.id] ?? m.stock) <= 5))
 
 // ---------- persistence + timer ----------
 watch(
-  () => ({ orders: s.orders, seq: s.seq, stock: s.stock }),
+  () => ({ orders: s.orders, seq: s.seq }),
   (v) => { try { localStorage.setItem(KEY, JSON.stringify(v)) } catch {} },
   { deep: true }
 )
@@ -56,6 +52,57 @@ export const money = (n) =>
 export function say(text) {
   s.toast = text
   setTimeout(() => (s.toast = ''), 2200)
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options.headers },
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.error || `Request failed (${response.status}).`)
+  }
+  return response.status === 204 ? null : response.json()
+}
+
+function syncMenu(rows) {
+  const items = rows.map((row) => ({ ...row, cat: row.category ?? row.cat }))
+  MENU.splice(0, MENU.length, ...items)
+  s.stock = Object.fromEntries(items.map((item) => [item.id, item.stock]))
+}
+
+export async function refreshMenu() {
+  try {
+    syncMenu(await api('/api/menu'))
+  } catch (error) {
+    say(`Menu API unavailable: ${error.message}`)
+  }
+}
+
+export async function createMenuItem(values) {
+  const item = await api('/api/menu', { method: 'POST', body: JSON.stringify(values) })
+  syncMenu([...MENU, item])
+  return item
+}
+
+export async function updateMenuItem(id, values) {
+  const item = await api(`/api/menu/${id}`, { method: 'PUT', body: JSON.stringify(values) })
+  syncMenu(MENU.map((existing) => existing.id === item.id ? item : existing))
+  return item
+}
+
+export async function deleteMenuItem(id) {
+  await api(`/api/menu/${id}`, { method: 'DELETE' })
+  syncMenu(MENU.filter((item) => item.id !== Number(id)))
+  s.cart = s.cart.filter((line) => line.id !== Number(id))
+}
+
+function syncStockItem(row) {
+  const item = { ...row, cat: row.category ?? row.cat }
+  const index = MENU.findIndex((entry) => entry.id === item.id)
+  if (index !== -1) MENU.splice(index, 1, item)
+  s.stock[item.id] = item.stock
 }
 
 export function login(name = 'Staff') {
@@ -93,7 +140,7 @@ export const setView = (v, e) => { s.view = v; capture(e, 'Open ' + v) }
 
 export function left(item) {
   const inCart = s.cart.find((l) => l.id === item.id)
-  return s.stock[item.id] - (inCart ? inCart.qty : 0)
+  return (s.stock[item.id] ?? item.stock) - (inCart ? inCart.qty : 0)
 }
 
 export function tableState(t) {
@@ -123,36 +170,53 @@ export function changeQty(line, d, e) {
   capture(e, (d > 0 ? '+ ' : '− ') + line.name)
 }
 
-export function sendOrder(e) {
+export async function sendOrder(e) {
   if (!s.cart.length) return
-  s.cart.forEach((l) => (s.stock[l.id] -= l.qty))
-  s.orders.unshift({
-    id: ++s.seq, type: s.type, table: s.type === 'Dine-in' ? s.table : null,
-    lines: s.cart.map((l) => ({ ...l })), discount: s.discount, ...s.calc,
-    status: 'New', paid: false, createdAt: Date.now(),
-  })
-  s.cart = []; s.discount = 'None'
-  capture(e, 'Send to kitchen (default prevented)')
-  say(`Order #${s.seq} sent to kitchen`)
+  if (s.sending) return
+  s.sending = true
+  const lines = s.cart.map((line) => ({ ...line }))
+  const totals = { ...s.calc }
+  try {
+    syncMenu(await api('/api/stock/consume', { method: 'POST', body: JSON.stringify({ lines }) }))
+    s.orders.unshift({
+      id: ++s.seq, type: s.type, table: s.type === 'Dine-in' ? s.table : null,
+      lines, discount: s.discount, ...totals,
+      status: 'New', paid: false, createdAt: Date.now(),
+    })
+    s.cart = []; s.discount = 'None'
+    capture(e, 'Send to kitchen (default prevented)')
+    say(`Order #${s.seq} sent to kitchen`)
+  } catch (error) {
+    say(error.message)
+  } finally {
+    s.sending = false
+  }
 }
 
 export const mins = (o) => Math.floor((s.now - o.createdAt) / 60000)
 export const nextStatus = (st) => ({ New: 'Preparing', Preparing: 'Ready', Ready: 'Served' })[st]
 export function advance(o, e) { o.status = nextStatus(o.status); capture(e, `Order #${o.id} ${o.status}`) }
 
-export function cancel(o, e) {
-  o.lines.forEach((l) => (s.stock[l.id] += l.qty))
-  o.status = 'Cancelled'
-  capture(e, 'Cancel #' + o.id)
-  say('Order cancelled, stock restored')
+export async function cancel(o, e) {
+  try {
+    syncMenu(await api('/api/stock/restore', { method: 'POST', body: JSON.stringify({ lines: o.lines }) }))
+    o.status = 'Cancelled'
+    capture(e, 'Cancel #' + o.id)
+    say('Order cancelled, stock restored')
+  } catch (error) {
+    say(error.message)
+  }
 }
 
-export function adjustStock(m, amount, e) {
-  const next = Math.max(0, s.stock[m.id] + amount)
-  const changed = next - s.stock[m.id]
-  s.stock[m.id] = next
-  capture(e, `${changed >= 0 ? 'Add' : 'Remove'} stock · ${m.name}`)
-  say(changed >= 0 ? `${m.name}: ${changed} added` : `${m.name}: ${Math.abs(changed)} removed`)
+export async function adjustStock(m, amount, e) {
+  try {
+    const item = await api(`/api/menu/${m.id}/stock`, { method: 'PATCH', body: JSON.stringify({ adjustment: amount }) })
+    syncStockItem(item)
+    capture(e, `${amount >= 0 ? 'Add' : 'Remove'} stock · ${m.name}`)
+    say(amount >= 0 ? `${m.name}: ${amount} added` : `${m.name}: ${Math.abs(amount)} removed`)
+  } catch (error) {
+    say(error.message)
+  }
 }
 
 export function restock(m, e) { adjustStock(m, 20, e) }
@@ -176,7 +240,7 @@ export function pay(o, method, tendered, e) {
 }
 
 export function resetDemo(e) {
-  const f = fresh()
-  s.orders = f.orders; s.seq = f.seq; s.stock = f.stock; s.cart = []
-  capture(e, 'Reset demo'); say('Demo data reset')
+  s.orders = []; s.seq = 100; s.cart = []
+  refreshMenu()
+  capture(e, 'Reset demo'); say('Demo orders reset')
 }
