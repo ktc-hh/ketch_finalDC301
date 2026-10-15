@@ -5,12 +5,14 @@ import FloorView from './components/FloorView.vue'
 import OrderView from './components/OrderView.vue'
 import KitchenView from './components/KitchenView.vue'
 import CashierView from './components/CashierView.vue'
+import InventoryView from './components/InventoryView.vue'
 
 const tabs = [
   { id: 'floor', label: 'Floor', comp: FloorView },
   { id: 'order', label: 'Order', comp: OrderView },
   { id: 'kitchen', label: 'Kitchen', comp: KitchenView },
   { id: 'cashier', label: 'Cashier', comp: CashierView },
+  { id: 'inventory', label: 'Inventory', comp: InventoryView },
 ]
 
 const loginForm = ref({ username: '', password: '' })
@@ -27,8 +29,9 @@ const handleLogin = () => {
       <div class="brand-wrap">
         <div class="brand-mark">K</div>
         <div>
-          <div class="brand-kicker">Restaurant ops</div>
+          <div class="brand-kicker">Lutong Pinoy · Restaurant</div>
           <h1>Kainan</h1>
+          <div class="brand-tagline">Tatak pinoy, tatak masarap.</div>
         </div>
       </div>
 
@@ -54,8 +57,9 @@ const handleLogin = () => {
       <div class="brand-wrap">
         <div class="brand-mark">K</div>
         <div>
-          <div class="brand-kicker">Restaurant ops</div>
+          <div class="brand-kicker">Lutong Pinoy · Restaurant</div>
           <h1>Kainan</h1>
+          <div class="brand-tagline">Tatak pinoy, tatak masarap.</div>
         </div>
       </div>
 

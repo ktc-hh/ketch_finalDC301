@@ -147,7 +147,15 @@ export function cancel(o, e) {
   say('Order cancelled, stock restored')
 }
 
-export function restock(m, e) { s.stock[m.id] += 20; capture(e, 'Restock ' + m.name) }
+export function adjustStock(m, amount, e) {
+  const next = Math.max(0, s.stock[m.id] + amount)
+  const changed = next - s.stock[m.id]
+  s.stock[m.id] = next
+  capture(e, `${changed >= 0 ? 'Add' : 'Remove'} stock · ${m.name}`)
+  say(changed >= 0 ? `${m.name}: ${changed} added` : `${m.name}: ${Math.abs(changed)} removed`)
+}
+
+export function restock(m, e) { adjustStock(m, 20, e) }
 export const byMethod = (m) => s.paid.filter((o) => o.method === m).reduce((t, o) => t + o.total, 0)
 
 export function pay(o, method, tendered, e) {
